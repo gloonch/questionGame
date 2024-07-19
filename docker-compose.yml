@@ -1,0 +1,19 @@
+version: '3.7'
+
+services:
+  question-database:
+    image: mysql:9.0
+    ports:
+      - "3306:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    restart: always
+    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']
+    environment:
+      MYSQL_ROOT_PASSWORD: questionRoot7
+      MYSQL_DATABASE: question_db
+      MYSQL_USER: question
+      MYSQL_PASSWORD: question7
+
+volumes:
+  dbdata:

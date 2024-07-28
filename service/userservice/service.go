@@ -4,20 +4,22 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"github.com/golang-jwt/jwt"
 	"questionGame/entity"
 	"questionGame/pkg/phonenumber"
-	// TODO replace md5 with bcrypt
-	//"golang.org/x/crypto/bcrypt"
+	"time"
 )
 
 type Repository interface {
 	IsPhoneNumberUnique(phoneNumber string) (bool, error)
 	Register(u entity.User) (entity.User, error)
 	GetUserByPhoneNumber(PhoneNumber string) (entity.User, bool, error)
+	GetUserByID(userID uint) (entity.User, error)
 }
 
 type Service struct {
-	repo Repository
+	signKey string
+	repo    Repository
 }
 
 type RegisterRequest struct {
@@ -30,8 +32,8 @@ type RegisterResponse struct {
 	User entity.User
 }
 
-func New(repo Repository) Service {
-	return Service{repo: repo}
+func New(repo Repository, signKey string) Service {
+	return Service{repo: repo, signKey: signKey}
 }
 
 func (s Service) Register(req RegisterRequest) (RegisterResponse, error) {
@@ -91,6 +93,7 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
+	AccessToken string `json:"access_token"`
 }
 
 func (s Service) Login(req LoginRequest) (LoginResponse, error) {
@@ -109,13 +112,72 @@ func (s Service) Login(req LoginRequest) (LoginResponse, error) {
 		return LoginResponse{}, fmt.Errorf("username or password is wrong")
 	}
 
-	// compare user.Password with req.Password
+	// jwt token
+	token, err := createToken(user.ID, s.signKey)
+	if err != nil {
+		return LoginResponse{}, fmt.Errorf("unexpected error while creating token: %w", err)
+	}
 
-	// return ok
-	return LoginResponse{}, nil
+	return LoginResponse{AccessToken: token}, nil
 }
 
 func getMD5Hash(text string) string {
 	hash := md5.Sum([]byte(text))
 	return hex.EncodeToString(hash[:])
+}
+
+type ProfileRequest struct {
+	UserID uint `json:"user_id"`
+}
+
+type ProfileResponse struct {
+	Name string `json:"name"`
+}
+
+// all request inputs for interactor/service could be sanitized
+
+func (s Service) GetProfile(req ProfileRequest) (ProfileResponse, error) {
+	// getUserByID
+	user, err := s.repo.GetUserByID(req.UserID)
+	if err != nil {
+		// I have not expect the repository call return "record not found" error,
+		// because I assume the interactor input is sanitized
+		// TODO: we can use Rich Error
+		return ProfileResponse{}, fmt.Errorf("unexpected error while getting user by ID: %w", err)
+	}
+
+	// return data
+	return ProfileResponse{Name: user.Name}, nil
+}
+
+type Claims struct {
+	StandardClaims jwt.StandardClaims
+	UserID         uint
+}
+
+func (c Claims) Valid() error {
+	return nil
+}
+
+func createToken(userID uint, signKey string) (string, error) {
+	// TODO: replace with rsa 256
+	// create a signer for rsa 256
+	//t := jwt.New(jwt.GetSigningMethod("HS256"))
+
+	// set claim
+	claims := Claims{
+		StandardClaims: jwt.StandardClaims{
+			//ExpiresAt: time.Now().Add(time.Hour * 24 * 7),
+			ExpiresAt: int64(time.Hour * 24 * 7),
+		},
+		UserID: userID,
+	}
+
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := accessToken.SignedString([]byte(signKey))
+	if err != nil {
+		return "", err
+	}
+
+	return tokenString, nil
 }

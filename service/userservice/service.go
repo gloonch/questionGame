@@ -13,6 +13,7 @@ import (
 type Repository interface {
 	IsPhoneNumberUnique(phoneNumber string) (bool, error)
 	Register(u entity.User) (entity.User, error)
+	GetUserByPhoneNumber(PhoneNumber string) (entity.User, bool, error)
 }
 
 type Service struct {
@@ -85,22 +86,33 @@ func (s Service) Register(req RegisterRequest) (RegisterResponse, error) {
 }
 
 type LoginRequest struct {
-	PhoneNumber string
-	Password    string
+	PhoneNumber string `json:"phone_number"`
+	Password    string `json:"password"`
 }
 
 type LoginResponse struct {
 }
 
 func (s Service) Login(req LoginRequest) (LoginResponse, error) {
-	// check the existence of phone number from repository
-	// get user by phone_number
-	// these two steps could be put in one
+	// TODO: it would be better to use two separate methods for existence check and getUserByPhoneNumber
+
+	user, exist, err := s.repo.GetUserByPhoneNumber(req.PhoneNumber)
+	if err != nil {
+		return LoginResponse{}, fmt.Errorf("unexpected error while getting user by phone number: %w", err)
+	}
+
+	if !exist {
+		return LoginResponse{}, fmt.Errorf("username or password is wrong")
+	}
+
+	if user.Password != getMD5Hash(req.Password) {
+		return LoginResponse{}, fmt.Errorf("username or password is wrong")
+	}
 
 	// compare user.Password with req.Password
 
 	// return ok
-	panic("implement me")
+	return LoginResponse{}, nil
 }
 
 func getMD5Hash(text string) string {

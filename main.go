@@ -7,11 +7,17 @@ import (
 	"log"
 	"net/http"
 	"questionGame/repository/mysql"
+	"questionGame/service/authservice"
 	"questionGame/service/userservice"
+	"time"
 )
 
 const (
-	JwtSignKey = "jwt_secret"
+	JwtSignKey                 = "jwt_secret"
+	AccessTokenSubject         = "ac"
+	RefreshTokenSubject        = "rt"
+	AccessTokenExpireDuration  = time.Hour * 24
+	RefreshTokenExpireDuration = time.Hour * 24
 )
 
 func main() {
@@ -32,31 +38,19 @@ func userProfileHandler(writer http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(writer, `{"error": "invalid method"}`)
 	}
 
-	//jwtToken := sessionID := req.Header.Get("Authorization")
-	// validate jtw token and retrieve userID from token payload
+	authSvc := authservice.New(JwtSignKey, AccessTokenSubject, RefreshTokenSubject,
+		AccessTokenExpireDuration, RefreshTokenExpireDuration)
 
-	pReq := userservice.ProfileRequest{UserID: 0}
-
-	data, err := io.ReadAll(req.Body)
+	authToken := req.Header.Get("Authorization")
+	claims, err := authSvc.ParseToken(authToken)
 	if err != nil {
-		writer.Write([]byte(
-			fmt.Sprintf(`{"error": "%s"}`, err.Error()),
-		))
-	}
-
-	err = json.Unmarshal(data, &pReq)
-	if err != nil {
-		writer.Write([]byte(
-			fmt.Sprintf(`{"error": "%s"}`, err.Error()),
-		))
-
-		return
+		fmt.Fprintf(writer, `{"error": "invalid token"}`)
 	}
 
 	mysqlRepo := mysql.New()
-	userSvc := userservice.New(mysqlRepo, JwtSignKey)
+	userSvc := userservice.New(authSvc, mysqlRepo)
 
-	response, err := userSvc.GetProfile(pReq)
+	response, err := userSvc.GetProfile(userservice.ProfileRequest{UserID: claims.UserID})
 	if err != nil {
 		writer.Write([]byte(
 			fmt.Sprintf(`{"error": "%s"}`, err.Error()),
@@ -65,7 +59,7 @@ func userProfileHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	data, err = json.Marshal(response)
+	data, err := json.Marshal(response)
 	if err != nil {
 		writer.Write([]byte(
 			fmt.Sprintf(`{"error": "%s"}`, err.Error()),
@@ -102,8 +96,11 @@ func userRegisterHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	authSvc := authservice.New(JwtSignKey, AccessTokenSubject, RefreshTokenSubject,
+		AccessTokenExpireDuration, RefreshTokenExpireDuration)
+
 	mysqlRepo := mysql.New()
-	userSvc := userservice.New(mysqlRepo, JwtSignKey)
+	userSvc := userservice.New(authSvc, mysqlRepo)
 
 	_, err = userSvc.Register(uReq)
 	if err != nil {
@@ -146,8 +143,11 @@ func userLoginHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	authSvc := authservice.New(JwtSignKey, AccessTokenSubject, RefreshTokenSubject,
+		AccessTokenExpireDuration, RefreshTokenExpireDuration)
+
 	mysqlRepo := mysql.New()
-	userSvc := userservice.New(mysqlRepo, JwtSignKey)
+	userSvc := userservice.New(authSvc, mysqlRepo)
 
 	response, lErr := userSvc.Login(lReq)
 	if lErr != nil {
@@ -170,32 +170,3 @@ func userLoginHandler(writer http.ResponseWriter, req *http.Request) {
 	writer.Write(data)
 
 }
-
-//func testUserMysqlRepo() {
-//
-//	mysqlRepo := mysql.New()
-//
-//	mysql.New()
-//	mysql.MySQLDB{}
-//	inja faqat db.go ro migire
-//
-//	vali az mysqlRepo mituni method haro call koni ke tuye user.go e
-//	mysqlRepo.IsPhoneNumberUnique()
-//
-//	createdUser, err := mysqlRepo.Register(entity.User{
-//		ID:          0,
-//		PhoneNumber: "0912",
-//		Name:        "Mahdi Hadian",
-//	})
-//	if err != nil {
-//		fmt.Println("register user: ", err)
-//	} else {
-//		fmt.Println("created user: ", createdUser)
-//	}
-//
-//	isUnique, err := mysqlRepo.IsPhoneNumberUnique(createdUser.PhoneNumber)
-//	if err != nil {
-//		fmt.Println("unique err")
-//	}
-//	fmt.Println("isUnique: ", isUnique)
-//}

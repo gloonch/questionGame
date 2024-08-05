@@ -4,10 +4,8 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"github.com/golang-jwt/jwt"
 	"questionGame/entity"
 	"questionGame/pkg/phonenumber"
-	"time"
 )
 
 type Repository interface {
@@ -17,9 +15,14 @@ type Repository interface {
 	GetUserByID(userID uint) (entity.User, error)
 }
 
+type AuthGenerator interface {
+	CreateAccessToken(user entity.User) (string, error)
+	CreateRefreshToken(user entity.User) (string, error)
+}
+
 type Service struct {
-	signKey string
-	repo    Repository
+	auth AuthGenerator
+	repo Repository
 }
 
 type RegisterRequest struct {
@@ -32,8 +35,8 @@ type RegisterResponse struct {
 	User entity.User
 }
 
-func New(repo Repository, signKey string) Service {
-	return Service{repo: repo, signKey: signKey}
+func New(authGenerator AuthGenerator, repo Repository) Service {
+	return Service{auth: authGenerator, repo: repo}
 }
 
 func (s Service) Register(req RegisterRequest) (RegisterResponse, error) {
@@ -93,7 +96,8 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	AccessToken string `json:"access_token"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 func (s Service) Login(req LoginRequest) (LoginResponse, error) {
@@ -113,12 +117,17 @@ func (s Service) Login(req LoginRequest) (LoginResponse, error) {
 	}
 
 	// jwt token
-	token, err := createToken(user.ID, s.signKey)
-	if err != nil {
-		return LoginResponse{}, fmt.Errorf("unexpected error while creating token: %w", err)
+	accessToken, aErr := s.auth.CreateAccessToken(user)
+	if aErr != nil {
+		return LoginResponse{}, fmt.Errorf("unexpected error while creating token: %w", aErr)
 	}
 
-	return LoginResponse{AccessToken: token}, nil
+	refreshToken, rErr := s.auth.CreateRefreshToken(user)
+	if rErr != nil {
+		return LoginResponse{}, rErr
+	}
+
+	return LoginResponse{AccessToken: accessToken, RefreshToken: refreshToken}, nil
 }
 
 func getMD5Hash(text string) string {
@@ -148,36 +157,4 @@ func (s Service) GetProfile(req ProfileRequest) (ProfileResponse, error) {
 
 	// return data
 	return ProfileResponse{Name: user.Name}, nil
-}
-
-type Claims struct {
-	StandardClaims jwt.StandardClaims
-	UserID         uint
-}
-
-func (c Claims) Valid() error {
-	return nil
-}
-
-func createToken(userID uint, signKey string) (string, error) {
-	// TODO: replace with rsa 256
-	// create a signer for rsa 256
-	//t := jwt.New(jwt.GetSigningMethod("HS256"))
-
-	// set claim
-	claims := Claims{
-		StandardClaims: jwt.StandardClaims{
-			//ExpiresAt: time.Now().Add(time.Hour * 24 * 7),
-			ExpiresAt: int64(time.Hour * 24 * 7),
-		},
-		UserID: userID,
-	}
-
-	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := accessToken.SignedString([]byte(signKey))
-	if err != nil {
-		return "", err
-	}
-
-	return tokenString, nil
 }
